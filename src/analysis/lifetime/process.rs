@@ -1,9 +1,9 @@
+use rustc_hash::FxHashMap;
 use rustc_hir::{def_id::DefId, Lifetime, LifetimeName, Mutability, Ty, TyKind};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::Span;
 
 use std::cmp::Eq;
-use std::collections::HashMap;
 use std::hash::Hash;
 use std::marker::Copy;
 
@@ -22,7 +22,7 @@ use crate::analysis::lifetime::utils::{
 */
 pub fn get_trait_lifetime_bounds<'tcx>(
     def_id: &DefId,
-    trait_bounds: &HashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
+    trait_bounds: &FxHashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
 ) -> Vec<LifetimeName> {
     let mut lifetimes: Vec<LifetimeName> = Vec::new();
 
@@ -35,9 +35,6 @@ pub fn get_trait_lifetime_bounds<'tcx>(
     }
     lifetimes
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct LifetimeNameWrapper(LifetimeName);
 
 #[derive(Debug, Clone)]
 pub struct MyLifetime {
@@ -59,7 +56,7 @@ pub struct ShortLivedType {
     pub is_closure: bool, // Is it a closure?
 }
 
-fn apply_remap<T>(x: T, remap: &HashMap<T, T>) -> T
+fn apply_remap<T>(x: T, remap: &FxHashMap<T, T>) -> T
 where
     T: Hash + Eq + Copy,
 {
@@ -70,12 +67,38 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LifetimeNameWrapper(pub LifetimeName);
+
+impl Hash for LifetimeNameWrapper {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self.0 {
+            LifetimeName::Static => {
+                0.hash(state);
+            }
+            LifetimeName::Param(def_id) => {
+                1.hash(state);
+                def_id.hash(state);
+            }
+            LifetimeName::ImplicitObjectLifetimeDefault => {
+                2.hash(state);
+            }
+            LifetimeName::Error => {
+                3.hash(state);
+            }
+            LifetimeName::Infer => {
+                4.hash(state);
+            }
+        }
+    }
+}
+
 /*
     "This type contains all these other subtypes that live at least as long as ___"
 */
 pub fn get_sub_types<'tcx>(
     ty: &'tcx Ty<'tcx>,
-    trait_bounds: &HashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
+    trait_bounds: &FxHashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
     tcx: &'tcx TyCtxt<'tcx>,
 ) -> Vec<ShortLivedType> {
     get_sub_types_dbg(
@@ -83,19 +106,19 @@ pub fn get_sub_types<'tcx>(
         trait_bounds,
         tcx,
         Vec::new(),
-        HashMap::new(),
-        HashMap::new(),
+        FxHashMap::default(),
+        FxHashMap::default(),
         false,
     )
 }
 
 pub fn get_sub_types_dbg<'tcx>(
     ty: &'tcx Ty<'tcx>,
-    trait_bounds: &HashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
+    trait_bounds: &FxHashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
     tcx: &'tcx TyCtxt<'tcx>,
     mut known_defids: Vec<DefId>, // Needed to prevent infinite loop
-    mut defid_remap: HashMap<DefId, &'tcx Ty<'tcx>>,
-    mut lifetime_remap: HashMap<LifetimeName, LifetimeName>,
+    mut defid_remap: FxHashMap<DefId, &'tcx Ty<'tcx>>,
+    mut lifetime_remap: FxHashMap<LifetimeNameWrapper, LifetimeNameWrapper>,
     debug: bool,
 ) -> Vec<ShortLivedType> {
     let mut types: Vec<ShortLivedType> = Vec::new();
@@ -344,7 +367,7 @@ pub fn get_sub_types_dbg<'tcx>(
             // ------------------------------------------------
             // Now if it's a structure, try to get the definition
 
-            let node = tcx.hir().span_if_local(*def_id);
+            let node = def_id.as_local().map(|id| tcx.hir_node_by_def_id(id));
 
             if node.is_none() || known_defids.contains(&def_id) {
                 // Non-local def, we weren't able to locate definition
@@ -421,12 +444,12 @@ pub fn get_sub_types_dbg<'tcx>(
             // We managed to find the structure definition. Go through sub-fields
 
             if let Some(rustc_hir::Node::Item(rustc_hir::Item {
-                kind: rustc_hir::ItemKind::Struct(variant_data, generics),
+                kind: rustc_hir::ItemKind::Struct(ident, variant_data, generics),
                 span: struct_decl_span,
                 ..
             })) = node
             {
-                let mut new_trait_bounds = get_bounds_from_generics(generics, &tcx.hir());
+                let mut new_trait_bounds = get_bounds_from_generics(generics);
                 new_trait_bounds.extend(
                     trait_bounds
                         .into_iter()
@@ -510,7 +533,7 @@ pub fn get_sub_types_dbg<'tcx>(
             if debug {
                 println!("Impl def id: {:?}", impl_def_id);
             }
-            let impl_node = tcx.hir().span_if_local(*impl_def_id);
+            let impl_node = impl_def_id.as_local().map(|id| tcx.hir_node_by_def_id(id));
 
             if let Some(rustc_hir::Node::Item(rustc_hir::Item {
                 kind:
@@ -520,7 +543,7 @@ pub fn get_sub_types_dbg<'tcx>(
                 ..
             })) = impl_node
             {
-                let mut new_trait_bounds = get_bounds_from_generics(generics, &tcx.hir());
+                let mut new_trait_bounds = get_bounds_from_generics(generics);
                 new_trait_bounds.extend(
                     trait_bounds
                         .into_iter()
@@ -553,11 +576,12 @@ fn generate_remappings<'tcx>(
     formal_args: &'tcx [rustc_hir::GenericParam<'tcx>],
     actual_args: Vec<&'tcx rustc_hir::GenericArg<'tcx>>,
 ) -> (
-    HashMap<LifetimeNameWrapper, LifetimeName>,
-    HashMap<DefId, &'tcx Ty<'tcx>>,
+    FxHashMap<LifetimeNameWrapper, LifetimeNameWrapper>,
+    FxHashMap<DefId, &'tcx Ty<'tcx>>,
 ) {
-    let mut lifetime_remap: HashMap<LifetimeNameWrapper, LifetimeName> = HashMap::new();
-    let mut defid_remap: HashMap<DefId, &'tcx Ty<'tcx>> = HashMap::new();
+    let mut lifetime_remap: FxHashMap<LifetimeNameWrapper, LifetimeNameWrapper> =
+        FxHashMap::default();
+    let mut defid_remap: FxHashMap<DefId, &'tcx Ty<'tcx>> = FxHashMap::default();
 
     if actual_args.len() != formal_args.len() {
         return (lifetime_remap, defid_remap);
@@ -569,7 +593,7 @@ fn generate_remappings<'tcx>(
         if let rustc_hir::GenericParamKind::Type { .. } = f_arg.kind {
             match a_arg {
                 rustc_hir::GenericArg::Type(ty) => {
-                    defid_remap.insert(f_arg.def_id.to_def_id(), ty);
+                    defid_remap.insert(f_arg.def_id.to_def_id(), ty.as_unambig_ty());
                 }
                 _ => {
                     panic!("Formal arg is a type but actual arg is not");
@@ -581,7 +605,10 @@ fn generate_remappings<'tcx>(
             match a_arg {
                 rustc_hir::GenericArg::Lifetime(a_lifetime) => {
                     let f_lifetime = LifetimeName::Param(f_arg.def_id);
-                    lifetime_remap.insert(LifetimeNameWrapper(f_lifetime), a_lifetime.res);
+                    lifetime_remap.insert(
+                        LifetimeNameWrapper(f_lifetime),
+                        LifetimeNameWrapper(a_lifetime.res),
+                    );
                 }
                 _ => {
                     panic!("Formal arg is a lifetime but actual arg is not");
@@ -594,7 +621,7 @@ fn generate_remappings<'tcx>(
 
 pub fn get_implicit_lifetime_bounds<'tcx>(
     ty: &'tcx Ty<'tcx>,
-    trait_bounds: &HashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
+    trait_bounds: &FxHashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
     tcx: &'tcx TyCtxt<'tcx>,
 ) -> Vec<(LifetimeName, LifetimeName)> {
     let sub_types = get_sub_types(ty, trait_bounds, tcx);
@@ -622,7 +649,7 @@ pub fn get_implicit_lifetime_bounds<'tcx>(
     for (x, y) in all_bounds.iter() {
         if !unique_bounds
             .iter()
-            .any(|(a, b)| compare_lifetimes(x, a) && compare_lifetimes(y, b))
+            .any(|(a, b)| compare_lifetimes(&x, &a) && compare_lifetimes(&y, &b))
         {
             unique_bounds.push((*x, *y));
         }

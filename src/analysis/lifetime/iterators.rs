@@ -5,7 +5,8 @@ use crate::analysis::lifetime::utils::{
 use crate::analysis::lifetime::MirFunc;
 use crate::YugaConfig;
 
-use rustc_hir::Item;
+use rustc_hir::{Item, OwnerNode};
+use rustc_middle::bug;
 use rustc_middle::ty::TyCtxt;
 
 pub struct FnIter<'tcx, 'a> {
@@ -17,14 +18,22 @@ pub struct FnIter<'tcx, 'a> {
 }
 
 pub fn fn_iter<'a, 'tcx>(tcx: &'a TyCtxt<'tcx>, config: YugaConfig) -> FnIter<'tcx, 'a> {
-    let hir_map = tcx.hir();
-
     let mut items: Vec<&rustc_hir::Item> = Vec::new();
 
-    for item_id in hir_map.items() {
-        let item = hir_map.expect_item(item_id.owner_id.def_id);
+    for item_id in tcx.hir_crate_items(()).free_items() {
+        let item = match tcx.expect_hir_owner_node(item_id.owner_id.def_id) {
+            OwnerNode::Item(item) => item,
+            _ => bug!("expected item, found"),
+        };
 
-        if let rustc_hir::ItemKind::Fn(..) = &item.kind {
+        if let rustc_hir::ItemKind::Fn {
+            ident: _,
+            sig: _,
+            generics: _,
+            body: _,
+            has_body: _,
+        } = &item.kind
+        {
             items.push(&item);
         }
         if let rustc_hir::ItemKind::Impl(this_impl) = &item.kind {
@@ -50,7 +59,6 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
         }
 
         let item: &Item = self.items[self.ind];
-        let hir_map = self.tcx.hir();
 
         match &item.kind {
             rustc_hir::ItemKind::Fn {
@@ -70,14 +78,19 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                     return self.next();
                 }
 
-                let params = hir_map.body(*body).params;
-                let body_span = hir_map.body(*body).value.span;
+                let params = self.tcx.hir_body(*body).params;
+                let body_span = self.tcx.hir_body(*body).value.span;
                 let func_name = format!("{:?}", item);
                 let impl_trait = "".to_string();
-                let generic_bounds = get_bounds_from_generics(&generics, &hir_map);
+                let generic_bounds = get_bounds_from_generics(&generics);
                 let lifetime_bounds = get_lifetime_lifetime_bounds(&generics);
-                let body_defid = hir_map.body_owner_def_id(*body).to_def_id();
-                let mir_body = get_mir_fn_from_defid(self.tcx, body_defid).unwrap();
+                let body_defid = self
+                    .tcx
+                    .parent_hir_node(body.hir_id)
+                    .associated_body()
+                    .unwrap()
+                    .0;
+                let mir_body = get_mir_fn_from_defid(self.tcx, body_defid.to_def_id()).unwrap();
 
                 let mirfunc = MirFunc {
                     fn_sig: sig,
@@ -103,12 +116,12 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                 let impl_item = &this_impl.items[self.impl_ind];
                 self.impl_ind += 1;
 
-                if let Some(rustc_hir::Node::ImplItem(rustc_hir::ImplItem {
+                if let rustc_hir::Node::ImplItem(rustc_hir::ImplItem {
                     kind: rustc_hir::ImplItemKind::Fn(fn_sig, body_id),
                     generics,
                     vis_span,
                     ..
-                })) = hir_map.find(impl_item.id.hir_id())
+                }) = self.tcx.hir_node_by_def_id(impl_item.id.owner_id.def_id)
                 {
                     let source_map = self.tcx.sess.source_map();
                     let vis_string = source_map
@@ -119,7 +132,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                     let (def_id, _) = get_defid_args_from_kind(&this_impl.self_ty.kind);
                     let mut type_vis = "".to_string();
                     if let Some(def_id) = def_id {
-                        let span = self.tcx.hir().span_if_local(def_id);
+                        let span = self.tcx.hir_span_if_local(def_id);
                         if let Some(span) = span {
                             type_vis = source_map
                                 .span_to_snippet(span)
@@ -146,13 +159,12 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
 
                     let mut self_lifetimes: Vec<rustc_hir::LifetimeName> = Vec::new();
 
-                    let impl_generic_bounds =
-                        get_bounds_from_generics(&this_impl.generics, &hir_map);
+                    let impl_generic_bounds = get_bounds_from_generics(&this_impl.generics);
                     let impl_lifetime_bounds = get_lifetime_lifetime_bounds(&this_impl.generics);
 
-                    let params = hir_map.body(*body_id).params;
-                    let body_defid = hir_map.body_owner_def_id(*body_id).to_def_id();
-                    let body_span = hir_map.body(*body_id).value.span;
+                    let params = self.tcx.hir_body(*body_id).params;
+                    let body_defid = self.tcx.hir_body_owner_def_id(*body_id).to_def_id();
+                    let body_span = self.tcx.hir_body(*body_id).value.span;
 
                     let mut func_name: String = "".to_owned();
 
@@ -162,7 +174,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                         func_name = format!("{:?}::{}", path.res, impl_item.ident.name.as_str());
                     }
 
-                    let mut generic_bounds = get_bounds_from_generics(&generics, &hir_map);
+                    let mut generic_bounds = get_bounds_from_generics(&generics);
                     let mut lifetime_bounds = get_lifetime_lifetime_bounds(&generics);
 
                     generic_bounds.extend(&impl_generic_bounds);

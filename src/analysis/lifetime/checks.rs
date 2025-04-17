@@ -1,3 +1,4 @@
+use crate::analysis::lifetime::process::MyLifetime;
 use crate::analysis::lifetime::process::ShortLivedType;
 use crate::analysis::lifetime::utils::{
     compare_lifetimes, get_drop_impl,
@@ -47,7 +48,7 @@ pub fn arg_return_outlives(
     }
     // If there are no source lifetimes, then we own the thing
     // and we can assume it'll live forever. No violation possible.
-    if (src_bounding_lt.len() == 0) || src_bounding_lt.contains(&LifetimeName::Static) {
+    if (src_bounding_lt.len() == 0) || src_bounding_lt.contains(&(LifetimeName::Static)) {
         return (false, (Vec::new(), Vec::new()), (false, false));
     }
 
@@ -362,4 +363,198 @@ pub fn arg_arg_outlives(
         }
     }
     (false, (Vec::new(), Vec::new()))
+}
+
+pub fn check_if_lifetimes_match(
+    src_lifetimes: &Vec<MyLifetime>,
+    tgt_lifetimes: &Vec<MyLifetime>,
+    lifetime_bounds: &Vec<(LifetimeName, LifetimeName)>,
+    is_mut: bool,
+    is_raw: bool,
+    is_refcell: bool,
+) -> (bool, (Vec<LifetimeName>, Vec<LifetimeName>), (bool, bool)) {
+    let mut matches = true;
+
+    // Get all the lifetimes that bound the source lifetimes
+    let mut src_bounding_lt: Vec<LifetimeName> = Vec::new();
+    for src_lifetime in src_lifetimes.iter() {
+        for name in src_lifetime.names.iter() {
+            src_bounding_lt.push(*name);
+            for (lt1, lt2) in lifetime_bounds.iter() {
+                if compare_lifetimes(&lt1, &name) {
+                    src_bounding_lt.push(*lt2);
+                }
+            }
+        }
+    }
+
+    // If there are no lifetimes in the source, or if static is in the source
+    // Then we can match with anything
+    if (src_bounding_lt.len() == 0) || src_bounding_lt.contains(&LifetimeName::Static) {
+        return (true, (src_bounding_lt, Vec::new()), (is_mut, is_raw));
+    }
+
+    // Get all the lifetimes that bound the target lifetimes
+    let mut tgt_bounding_lt: Vec<LifetimeName> = Vec::new();
+    for tgt_lifetime in tgt_lifetimes.iter() {
+        for name in tgt_lifetime.names.iter() {
+            tgt_bounding_lt.push(*name);
+            for (lt1, lt2) in lifetime_bounds.iter() {
+                if compare_lifetimes(&lt1, &name) {
+                    tgt_bounding_lt.push(*lt2);
+                }
+            }
+        }
+    }
+
+    // If there are no lifetimes in the target, or if static is in the target
+    // Then we can match with anything
+    if (tgt_bounding_lt.len() == 0) || tgt_bounding_lt.contains(&LifetimeName::Static) {
+        return (true, (src_bounding_lt, tgt_bounding_lt), (is_mut, is_raw));
+    }
+
+    // Check if all the source lifetimes are in the target lifetimes
+    for src_lifetime in src_bounding_lt.iter() {
+        let mut found = false;
+        for tgt_lifetime in tgt_bounding_lt.iter() {
+            if compare_lifetimes(&src_lifetime, &tgt_lifetime) {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            matches = false;
+            break;
+        }
+    }
+
+    (
+        matches,
+        (src_bounding_lt, tgt_bounding_lt),
+        (is_mut, is_raw),
+    )
+}
+
+pub fn check_if_lifetimes_match_simple(
+    src_lifetimes: &Vec<MyLifetime>,
+    tgt_lifetimes: &Vec<MyLifetime>,
+    lifetime_bounds: &Vec<(LifetimeName, LifetimeName)>,
+    is_mut: bool,
+    is_raw: bool,
+) -> (bool, (Vec<LifetimeName>, Vec<LifetimeName>)) {
+    let mut matches = true;
+
+    // Get all the lifetimes that bound the source lifetimes
+    let mut src_bounding_lt: Vec<LifetimeName> = Vec::new();
+    for src_lifetime in src_lifetimes.iter() {
+        for name in src_lifetime.names.iter() {
+            src_bounding_lt.push(*name);
+            for (lt1, lt2) in lifetime_bounds.iter() {
+                if compare_lifetimes(&lt1, &name) {
+                    src_bounding_lt.push(*lt2);
+                }
+            }
+        }
+    }
+
+    // If there are no lifetimes in the source, or if static is in the source
+    // Then we can match with anything
+    if (src_bounding_lt.len() == 0) || src_bounding_lt.contains(&LifetimeName::Static) {
+        return (true, (src_bounding_lt, Vec::new()));
+    }
+
+    // Get all the lifetimes that bound the target lifetimes
+    let mut tgt_bounding_lt: Vec<LifetimeName> = Vec::new();
+    for tgt_lifetime in tgt_lifetimes.iter() {
+        for name in tgt_lifetime.names.iter() {
+            tgt_bounding_lt.push(*name);
+            for (lt1, lt2) in lifetime_bounds.iter() {
+                if compare_lifetimes(&lt1, &name) {
+                    tgt_bounding_lt.push(*lt2);
+                }
+            }
+        }
+    }
+
+    // Check if all the source lifetimes are in the target lifetimes
+    for src_lifetime in src_bounding_lt.iter() {
+        let mut found = false;
+        for tgt_lifetime in tgt_bounding_lt.iter() {
+            if compare_lifetimes(&src_lifetime, &tgt_lifetime) {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            matches = false;
+            break;
+        }
+    }
+
+    (matches, (src_bounding_lt, tgt_bounding_lt))
+}
+
+pub fn check_if_lifetimes_match_with_bounds(
+    src_lifetimes: &Vec<MyLifetime>,
+    tgt_lifetimes: &Vec<MyLifetime>,
+    lifetime_bounds: &Vec<(LifetimeName, LifetimeName)>,
+    is_mut: bool,
+    is_raw: bool,
+) -> (bool, (Vec<LifetimeName>, Vec<LifetimeName>)) {
+    let mut matches = true;
+
+    // Get all the lifetimes that bound the source lifetimes
+    let mut src_bounding_lt: Vec<LifetimeName> = Vec::new();
+    for src_lifetime in src_lifetimes.iter() {
+        for name in src_lifetime.names.iter() {
+            src_bounding_lt.push(*name);
+            for (lt1, lt2) in lifetime_bounds.iter() {
+                if compare_lifetimes(&lt1, &name) {
+                    src_bounding_lt.push(*lt2);
+                }
+            }
+        }
+    }
+
+    // If there are no lifetimes in the source, or if static is in the source
+    // Then we can match with anything
+    if src_bounding_lt.len() == 0 || src_bounding_lt.contains(&LifetimeName::Static) {
+        return (true, (src_bounding_lt, Vec::new()));
+    }
+
+    // Get all the lifetimes that bound the target lifetimes
+    let mut tgt_bounding_lt: Vec<LifetimeName> = Vec::new();
+    for tgt_lifetime in tgt_lifetimes.iter() {
+        for name in tgt_lifetime.names.iter() {
+            tgt_bounding_lt.push(*name);
+            for (lt1, lt2) in lifetime_bounds.iter() {
+                if compare_lifetimes(&lt1, &name) {
+                    tgt_bounding_lt.push(*lt2);
+                }
+            }
+        }
+    }
+
+    // If there are no lifetimes in the target, or if static is in the target
+    // Then we can match with anything
+    if tgt_bounding_lt.len() == 0 || tgt_bounding_lt.contains(&LifetimeName::Static) {
+        return (true, (src_bounding_lt, tgt_bounding_lt));
+    }
+
+    // Check if all the source lifetimes are in the target lifetimes
+    for src_lifetime in src_bounding_lt.iter() {
+        let mut found = false;
+        for tgt_lifetime in tgt_bounding_lt.iter() {
+            if compare_lifetimes(&src_lifetime, &tgt_lifetime) {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            matches = false;
+            break;
+        }
+    }
+
+    (matches, (src_bounding_lt, tgt_bounding_lt))
 }

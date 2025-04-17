@@ -12,6 +12,7 @@ extern crate rustc_index;
 extern crate rustc_interface;
 extern crate rustc_middle;
 // extern crate rustc_mir;
+extern crate rustc_hash;
 extern crate rustc_span;
 
 extern crate bitflags;

@@ -9,6 +9,7 @@ mod report;
 mod taint;
 pub mod utils;
 
+use rustc_hash::FxHashMap;
 use utils::{get_actual_type, get_first_field, get_mir_value_from_hir_param, get_name_from_param};
 
 use report::{
@@ -58,8 +59,8 @@ impl<'tcx> LifetimeChecker<'tcx> {
                 &func.generic_bounds,
                 self.tcx,
                 Vec::new(),
-                HashMap::new(),
-                HashMap::new(),
+                FxHashMap::default(),
+                FxHashMap::default(),
                 false,
             );
 
@@ -76,8 +77,8 @@ impl<'tcx> LifetimeChecker<'tcx> {
                 &func.generic_bounds,
                 self.tcx,
                 Vec::new(),
-                HashMap::new(),
-                HashMap::new(),
+                FxHashMap::default(),
+                FxHashMap::default(),
                 false,
             );
 

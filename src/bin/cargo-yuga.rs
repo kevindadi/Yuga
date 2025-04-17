@@ -1,5 +1,4 @@
-#![feature(backtrace)]
-
+#![feature(rustc_private)]
 ///! This implementation is based on `cargo-miri`
 ///! https://github.com/rust-lang/miri/blob/master/src/bin/cargo-miri.rs
 #[macro_use]
@@ -142,7 +141,7 @@ fn cargo_package() -> cargo_metadata::Package {
         .iter()
         .position(|package| {
             let package_manifest_path = Path::new(&package.manifest_path);
-            
+
             if let Some(manifest_path) = &manifest_path {
                 package_manifest_path == manifest_path
             } else {
@@ -250,9 +249,7 @@ fn main() {
         // dependencies get dispatched to `rustc`, the final test/binary to `yuga`.
         inside_cargo_rustc();
     } else {
-        show_error(
-            "`cargo-yuga` must be called with either `yuga` or `rustc` as first argument.",
-        );
+        show_error("`cargo-yuga` must be called with either `yuga` or `rustc` as first argument.");
     }
 }
 
@@ -271,9 +268,18 @@ impl TargetKind {
 
 impl From<&cargo_metadata::Target> for TargetKind {
     fn from(target: &cargo_metadata::Target) -> Self {
-        if target.kind.iter().any(|s| TargetKind::is_lib_str(s)) {
+        if target
+            .kind
+            .iter()
+            .any(|s| s == &cargo_metadata::TargetKind::Lib)
+        {
             TargetKind::Library
-        } else if let Some("bin") = target.kind.get(0).map(|s| s.as_ref()) {
+        } else if target
+            .kind
+            .get(0)
+            .map(|s| s == &cargo_metadata::TargetKind::Bin)
+            .unwrap_or(false)
+        {
             TargetKind::Bin
         } else {
             TargetKind::Unknown
@@ -345,7 +351,12 @@ fn in_cargo_yuga() {
             TargetKind::Unknown => {
                 warn!(
                     "Target {}:{} is not supported",
-                    target.kind.as_slice().join("/"),
+                    target
+                        .kind
+                        .iter()
+                        .map(|k| k.to_string())
+                        .collect::<Vec<_>>()
+                        .join("/"),
                     &target.name
                 );
                 continue;

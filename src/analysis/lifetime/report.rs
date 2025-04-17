@@ -20,28 +20,23 @@ use comrak::plugins::syntect::SyntectAdapter;
 use comrak::{markdown_to_html_with_plugins, ComrakOptions, ComrakPlugins};
 
 pub fn get_string_from_lifetimes(lifetimes: Vec<LifetimeName>) -> String {
-    if lifetimes.len() == 0 {
-        return "lives for the entire duration that it is owned".to_string();
-    }
-    let mut lifetime_str = "outlives the lifetime corresponding to ".to_string();
-
-    for lt in lifetimes {
-        match lt {
+    let mut result = String::new();
+    for lifetime in lifetimes.iter() {
+        match lifetime {
             rustc_hir::LifetimeName::Param(ident) => {
-                lifetime_str.push_str(&format!("`{:?}`, ", ident));
+                result.push_str(&format!("'{:?}", ident));
             }
             rustc_hir::LifetimeName::ImplicitObjectLifetimeDefault => {
-                lifetime_str.push_str("`'_`, ");
+                result.push_str("'_");
             }
             rustc_hir::LifetimeName::Static => {
-                lifetime_str = String::from(
-                    "lives for the entire lifetime of the running program (`'static`)",
-                );
+                result.push_str("'static");
             }
             _ => {}
         }
+        result.push_str(", ");
     }
-    return lifetime_str;
+    result
 }
 
 pub fn generate_trace(
@@ -167,7 +162,7 @@ pub fn arg_return_uaf_report<'tcx>(
     human_report.push_str(&format_span(*tcx, &func.body_span));
     human_report.push_str("\n```\n");
 
-    let adapter = SyntectAdapter::new("base16-ocean.dark");
+    let adapter = SyntectAdapter::new(Some("base16-ocean.dark"));
     let options = ComrakOptions::default();
     let mut plugins = ComrakPlugins::default();
 
@@ -201,14 +196,7 @@ pub fn arg_return_mut_report<'tcx>(
     let src_type_name = format_span(*tcx, &src_ty.type_span);
     let tgt_type_name = format_span(*tcx, &tgt_ty.type_span);
 
-    let src_lifetime_str = match src_bounding_lt.first() {
-        Some(rustc_hir::LifetimeName::Param(ident)) => {
-            format!("`{:?}`", ident)
-        }
-        Some(rustc_hir::LifetimeName::ImplicitObjectLifetimeDefault) => "`'_`".to_string(),
-        Some(rustc_hir::LifetimeName::Static) => "`'static`".to_string(),
-        _ => "".to_string(),
-    };
+    let src_lifetime_str = get_string_from_lifetimes(src_bounding_lt);
     let tgt_lifetime_str = get_string_from_lifetimes(tgt_bounding_lt);
 
     human_report.push_str(&format!(
@@ -241,7 +229,7 @@ pub fn arg_return_mut_report<'tcx>(
     human_report.push_str(&format_span(*tcx, &func.body_span));
     human_report.push_str("\n```\n");
 
-    let adapter = SyntectAdapter::new("base16-ocean.dark");
+    let adapter = SyntectAdapter::new(Some("base16-ocean.dark"));
     let options = ComrakOptions::default();
     let mut plugins = ComrakPlugins::default();
 
@@ -317,7 +305,7 @@ pub fn arg_arg_uaf_report<'tcx>(
     human_report.push_str(&format_span(*tcx, &func.body_span));
     human_report.push_str("\n```\n");
 
-    let adapter = SyntectAdapter::new("base16-ocean.dark");
+    let adapter = SyntectAdapter::new(Some("base16-ocean.dark"));
     let options = ComrakOptions::default();
     let mut plugins = ComrakPlugins::default();
 
@@ -351,4 +339,128 @@ pub fn generate_llm_query<'tcx>(
     report.push_str("Your response should be only a single word, 'Yes' or 'No'");
 
     report
+}
+
+pub struct LifetimeReport {
+    pub src_bounding_lt: Vec<LifetimeName>,
+    pub tgt_bounding_lt: Vec<LifetimeName>,
+    pub is_mut: bool,
+    pub is_raw: bool,
+    pub is_refcell: bool,
+}
+
+impl LifetimeReport {
+    pub fn new(
+        src_bounding_lt: Vec<LifetimeName>,
+        tgt_bounding_lt: Vec<LifetimeName>,
+        is_mut: bool,
+        is_raw: bool,
+        is_refcell: bool,
+    ) -> Self {
+        LifetimeReport {
+            src_bounding_lt,
+            tgt_bounding_lt,
+            is_mut,
+            is_raw,
+            is_refcell,
+        }
+    }
+
+    pub fn get_string(&self) -> String {
+        let mut result = String::new();
+        result.push_str("Source lifetimes: ");
+        result.push_str(&get_string_from_lifetimes(self.src_bounding_lt.clone()));
+        result.push_str("\nTarget lifetimes: ");
+        result.push_str(&get_string_from_lifetimes(self.tgt_bounding_lt.clone()));
+        result.push_str("\nIs mutable: ");
+        result.push_str(&self.is_mut.to_string());
+        result.push_str("\nIs raw: ");
+        result.push_str(&self.is_raw.to_string());
+        result.push_str("\nIs refcell: ");
+        result.push_str(&self.is_refcell.to_string());
+        result
+    }
+}
+
+pub struct LifetimeReportSimple {
+    pub src_bounding_lt: Vec<LifetimeName>,
+    pub tgt_bounding_lt: Vec<LifetimeName>,
+    pub is_mut: bool,
+    pub is_raw: bool,
+}
+
+impl LifetimeReportSimple {
+    pub fn new(
+        src_bounding_lt: Vec<LifetimeName>,
+        tgt_bounding_lt: Vec<LifetimeName>,
+        is_mut: bool,
+        is_raw: bool,
+    ) -> Self {
+        LifetimeReportSimple {
+            src_bounding_lt,
+            tgt_bounding_lt,
+            is_mut,
+            is_raw,
+        }
+    }
+
+    pub fn get_string(&self) -> String {
+        let mut result = String::new();
+        result.push_str("Source lifetimes: ");
+        result.push_str(&get_string_from_lifetimes(self.src_bounding_lt.clone()));
+        result.push_str("\nTarget lifetimes: ");
+        result.push_str(&get_string_from_lifetimes(self.tgt_bounding_lt.clone()));
+        result.push_str("\nIs mutable: ");
+        result.push_str(&self.is_mut.to_string());
+        result.push_str("\nIs raw: ");
+        result.push_str(&self.is_raw.to_string());
+        result
+    }
+}
+
+pub fn get_string_from_lifetime(lifetime: Option<&LifetimeName>) -> String {
+    match lifetime {
+        Some(rustc_hir::LifetimeName::Param(ident)) => {
+            format!("'{:?}", ident)
+        }
+        Some(rustc_hir::LifetimeName::ImplicitObjectLifetimeDefault) => "`'_`".to_string(),
+        Some(rustc_hir::LifetimeName::Static) => "`'static`".to_string(),
+        _ => "".to_string(),
+    }
+}
+
+pub struct LifetimeReportWithBounds {
+    pub src_bounding_lt: Vec<LifetimeName>,
+    pub tgt_bounding_lt: Vec<LifetimeName>,
+    pub is_mut: bool,
+    pub is_raw: bool,
+}
+
+impl LifetimeReportWithBounds {
+    pub fn new(
+        src_bounding_lt: Vec<LifetimeName>,
+        tgt_bounding_lt: Vec<LifetimeName>,
+        is_mut: bool,
+        is_raw: bool,
+    ) -> Self {
+        LifetimeReportWithBounds {
+            src_bounding_lt,
+            tgt_bounding_lt,
+            is_mut,
+            is_raw,
+        }
+    }
+
+    pub fn get_string(&self) -> String {
+        let mut result = String::new();
+        result.push_str("Source lifetimes: ");
+        result.push_str(&get_string_from_lifetimes(self.src_bounding_lt.clone()));
+        result.push_str("\nTarget lifetimes: ");
+        result.push_str(&get_string_from_lifetimes(self.tgt_bounding_lt.clone()));
+        result.push_str("\nIs mutable: ");
+        result.push_str(&self.is_mut.to_string());
+        result.push_str("\nIs raw: ");
+        result.push_str(&self.is_raw.to_string());
+        result
+    }
 }
