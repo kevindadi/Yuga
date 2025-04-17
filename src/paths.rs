@@ -1,9 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use rustc_span::Symbol;
-
-use maplit::hashmap;
-use once_cell::sync::Lazy;
 
 /*
 How to find a path for unknown item:

@@ -40,8 +40,7 @@ use std::time::Instant;
 
 // Insert rustc arguments at the beginning of the argument list that Yuga wants to be
 // set per default, for maximal validation power.
-pub static YUGA_DEFAULT_ARGS: &[&str] =
-    &["-Zalways-encode-mir", "-Zmir-opt-level=0", "--cfg=yuga"];
+pub static YUGA_DEFAULT_ARGS: &[&str] = &["-Zalways-encode-mir", "-Zmir-opt-level=0", "--cfg=yuga"];
 
 #[derive(Debug, Clone)]
 pub struct YugaConfig {
@@ -103,7 +102,7 @@ pub fn compile_time_sysroot() -> Option<String> {
 fn run_analysis<F, R>(name: &str, f: F) -> R
 where
     F: FnOnce() -> R,
-{   
+{
     let now = Instant::now();
     progress_info!("{} analysis started", name);
     let result = f();

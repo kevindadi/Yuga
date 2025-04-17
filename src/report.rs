@@ -1,4 +1,5 @@
 use rustc_hir::def_id::LocalDefId;
+use rustc_middle::query::Key;
 use rustc_middle::ty::TyCtxt;
 
 use std::borrow::Cow;
@@ -87,15 +88,13 @@ impl Report {
         T: Into<Cow<'static, str>>,
         U: Into<Cow<'static, str>>,
     {
-        let hir_map = tcx.hir();
-        let item_hir_id = hir_map.local_def_id_to_hir_id(local_def_id);
-        let span = hir_map.span(item_hir_id);
+        let item_hir_id = tcx.local_def_id_to_hir_id(local_def_id);
+        let span = item_hir_id.default_span(tcx);
 
         let source_map = tcx.sess.source_map();
-        let source =
-            source_map
-                .span_to_snippet(span)
-                .unwrap_or_else(|e| format!("unable to get source: {:?}", e));
+        let source = source_map
+            .span_to_snippet(span)
+            .unwrap_or_else(|e| format!("unable to get source: {:?}", e));
 
         let location = source_map.span_to_diagnostic_string(span);
 

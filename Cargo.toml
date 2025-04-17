@@ -46,3 +46,6 @@ comrak = "0.13.1"
 
 [features]
 backtraces = ["snafu/backtraces", "snafu/backtraces-impl-backtrace-crate"]
+
+[package.metadata.rust-analyzer]
+rustc_private = true
