@@ -9,7 +9,7 @@ use crate::analysis::lifetime::mirfunc::MirFunc;
 
 use crate::utils::{format_span, format_span_with_diag};
 
-use rustc_hir::LifetimeName;
+use rustc_hir::LifetimeKind;
 use rustc_hir::Ty;
 
 use rustc_middle::ty::TyCtxt;
@@ -19,17 +19,17 @@ use rustc_span::{symbol::Symbol, Span};
 use comrak::plugins::syntect::SyntectAdapter;
 use comrak::{markdown_to_html_with_plugins, ComrakOptions, ComrakPlugins};
 
-pub fn get_string_from_lifetimes(lifetimes: Vec<LifetimeName>) -> String {
+pub fn get_string_from_lifetimes(lifetimes: Vec<LifetimeKind>) -> String {
     let mut result = String::new();
     for lifetime in lifetimes.iter() {
         match lifetime {
-            rustc_hir::LifetimeName::Param(ident) => {
+            rustc_hir::LifetimeKind::Param(ident) => {
                 result.push_str(&format!("'{:?}", ident));
             }
-            rustc_hir::LifetimeName::ImplicitObjectLifetimeDefault => {
+            rustc_hir::LifetimeKind::ImplicitObjectLifetimeDefault => {
                 result.push_str("'_");
             }
-            rustc_hir::LifetimeName::Static => {
+            rustc_hir::LifetimeKind::Static => {
                 result.push_str("'static");
             }
             _ => {}
@@ -110,8 +110,8 @@ pub fn arg_return_uaf_report<'tcx>(
     inp_num: usize,
     src_ty: &ShortLivedType,
     tgt_ty: &ShortLivedType,
-    src_bounding_lt: Vec<LifetimeName>,
-    tgt_bounding_lt: Vec<LifetimeName>,
+    src_bounding_lt: Vec<LifetimeKind>,
+    tgt_bounding_lt: Vec<LifetimeKind>,
 ) -> (String, String) {
     let mut human_report: String = String::new();
 
@@ -179,8 +179,8 @@ pub fn arg_return_mut_report<'tcx>(
     inp_num: usize,
     src_ty: &ShortLivedType,
     tgt_ty: &ShortLivedType,
-    src_bounding_lt: Vec<LifetimeName>,
-    tgt_bounding_lt: Vec<LifetimeName>,
+    src_bounding_lt: Vec<LifetimeKind>,
+    tgt_bounding_lt: Vec<LifetimeKind>,
 ) -> (String, String) {
     let mut human_report: String = String::new();
 
@@ -248,8 +248,8 @@ pub fn arg_arg_uaf_report<'tcx>(
     inp_num2: usize,
     src_ty: &ShortLivedType,
     tgt_ty: &ShortLivedType,
-    src_bounding_lt: Vec<LifetimeName>,
-    tgt_bounding_lt: Vec<LifetimeName>,
+    src_bounding_lt: Vec<LifetimeKind>,
+    tgt_bounding_lt: Vec<LifetimeKind>,
 ) -> (String, String) {
     let mut human_report: String = String::new();
 
@@ -342,8 +342,8 @@ pub fn generate_llm_query<'tcx>(
 }
 
 pub struct LifetimeReport {
-    pub src_bounding_lt: Vec<LifetimeName>,
-    pub tgt_bounding_lt: Vec<LifetimeName>,
+    pub src_bounding_lt: Vec<LifetimeKind>,
+    pub tgt_bounding_lt: Vec<LifetimeKind>,
     pub is_mut: bool,
     pub is_raw: bool,
     pub is_refcell: bool,
@@ -351,8 +351,8 @@ pub struct LifetimeReport {
 
 impl LifetimeReport {
     pub fn new(
-        src_bounding_lt: Vec<LifetimeName>,
-        tgt_bounding_lt: Vec<LifetimeName>,
+        src_bounding_lt: Vec<LifetimeKind>,
+        tgt_bounding_lt: Vec<LifetimeKind>,
         is_mut: bool,
         is_raw: bool,
         is_refcell: bool,
@@ -383,16 +383,16 @@ impl LifetimeReport {
 }
 
 pub struct LifetimeReportSimple {
-    pub src_bounding_lt: Vec<LifetimeName>,
-    pub tgt_bounding_lt: Vec<LifetimeName>,
+    pub src_bounding_lt: Vec<LifetimeKind>,
+    pub tgt_bounding_lt: Vec<LifetimeKind>,
     pub is_mut: bool,
     pub is_raw: bool,
 }
 
 impl LifetimeReportSimple {
     pub fn new(
-        src_bounding_lt: Vec<LifetimeName>,
-        tgt_bounding_lt: Vec<LifetimeName>,
+        src_bounding_lt: Vec<LifetimeKind>,
+        tgt_bounding_lt: Vec<LifetimeKind>,
         is_mut: bool,
         is_raw: bool,
     ) -> Self {
@@ -418,28 +418,28 @@ impl LifetimeReportSimple {
     }
 }
 
-pub fn get_string_from_lifetime(lifetime: Option<&LifetimeName>) -> String {
+pub fn get_string_from_lifetime(lifetime: Option<&LifetimeKind>) -> String {
     match lifetime {
-        Some(rustc_hir::LifetimeName::Param(ident)) => {
+        Some(rustc_hir::LifetimeKind::Param(ident)) => {
             format!("'{:?}", ident)
         }
-        Some(rustc_hir::LifetimeName::ImplicitObjectLifetimeDefault) => "`'_`".to_string(),
-        Some(rustc_hir::LifetimeName::Static) => "`'static`".to_string(),
+        Some(rustc_hir::LifetimeKind::ImplicitObjectLifetimeDefault) => "`'_`".to_string(),
+        Some(rustc_hir::LifetimeKind::Static) => "`'static`".to_string(),
         _ => "".to_string(),
     }
 }
 
 pub struct LifetimeReportWithBounds {
-    pub src_bounding_lt: Vec<LifetimeName>,
-    pub tgt_bounding_lt: Vec<LifetimeName>,
+    pub src_bounding_lt: Vec<LifetimeKind>,
+    pub tgt_bounding_lt: Vec<LifetimeKind>,
     pub is_mut: bool,
     pub is_raw: bool,
 }
 
 impl LifetimeReportWithBounds {
     pub fn new(
-        src_bounding_lt: Vec<LifetimeName>,
-        tgt_bounding_lt: Vec<LifetimeName>,
+        src_bounding_lt: Vec<LifetimeKind>,
+        tgt_bounding_lt: Vec<LifetimeKind>,
         is_mut: bool,
         is_raw: bool,
     ) -> Self {

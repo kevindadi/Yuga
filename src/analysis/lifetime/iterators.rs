@@ -157,7 +157,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                             .unwrap_or_else(|e| format!("unable to get source: {:?}", e));
                     }
 
-                    let mut self_lifetimes: Vec<rustc_hir::LifetimeName> = Vec::new();
+                    let mut self_lifetimes: Vec<rustc_hir::LifetimeKind> = Vec::new();
 
                     let impl_generic_bounds = get_bounds_from_generics(&this_impl.generics);
                     let impl_lifetime_bounds = get_lifetime_lifetime_bounds(&this_impl.generics);

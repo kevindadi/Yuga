@@ -8,7 +8,7 @@
 
 use rustc_hash::FxHashMap;
 use rustc_hir::{def_id::DefId, ConstContext, Mutability, Ty, TyKind};
-use rustc_hir::{LifetimeName, OwnerNode};
+use rustc_hir::{LifetimeKind, OwnerNode};
 
 use rustc_middle::bug;
 use rustc_middle::mir::Body;
@@ -145,7 +145,6 @@ pub fn get_type_definition(ty: &Ty, tcx: &TyCtxt) -> Option<Span> {
         _,
         rustc_hir::Path {
             res: rustc_hir::def::Res::Def(_, def_id),
-            segments,
             ..
         },
     )) = ty.kind
@@ -153,7 +152,7 @@ pub fn get_type_definition(ty: &Ty, tcx: &TyCtxt) -> Option<Span> {
         let node = tcx.hir_node_by_def_id(def_id.as_local().unwrap());
 
         if let rustc_hir::Node::Item(rustc_hir::Item {
-            kind: rustc_hir::ItemKind::Struct(ident, variant_data, generics),
+            kind: rustc_hir::ItemKind::Struct(_, _, _),
             span,
             ..
         }) = node
@@ -370,8 +369,8 @@ pub fn get_bounds_from_generics<'a, 'tcx>(
 
 pub fn get_lifetime_lifetime_bounds<'a>(
     generics: &'a rustc_hir::Generics,
-) -> Vec<(LifetimeName, LifetimeName)> {
-    let mut lifetime_bounds: Vec<(LifetimeName, LifetimeName)> = Vec::new();
+) -> Vec<(LifetimeKind, LifetimeKind)> {
+    let mut lifetime_bounds: Vec<(LifetimeKind, LifetimeKind)> = Vec::new();
 
     for predicate in generics.predicates {
         if let rustc_hir::WherePredicateKind::RegionPredicate(rustc_hir::WhereRegionPredicate {
@@ -382,7 +381,7 @@ pub fn get_lifetime_lifetime_bounds<'a>(
         {
             for bound in *bounds {
                 if let rustc_hir::GenericBound::Outlives(sub_lifetime) = bound {
-                    lifetime_bounds.push((lifetime.res, sub_lifetime.res));
+                    lifetime_bounds.push((lifetime.kind, sub_lifetime.kind));
                 }
             }
         }
@@ -391,11 +390,11 @@ pub fn get_lifetime_lifetime_bounds<'a>(
 }
 
 pub fn compare_lifetimes(
-    lifetime1: &rustc_hir::LifetimeName,
-    lifetime2: &rustc_hir::LifetimeName,
+    lifetime1: &rustc_hir::LifetimeKind,
+    lifetime2: &rustc_hir::LifetimeKind,
 ) -> bool {
     match (*lifetime1, *lifetime2) {
-        (rustc_hir::LifetimeName::Param(def_id1), rustc_hir::LifetimeName::Param(def_id2)) => {
+        (rustc_hir::LifetimeKind::Param(def_id1), rustc_hir::LifetimeKind::Param(def_id2)) => {
             if def_id1 == def_id2 {
                 return true;
             } else {
@@ -413,16 +412,16 @@ pub fn compare_lifetimes(
     }
 }
 
-pub fn is_user_defined_lifetime(lifetime: Option<&rustc_hir::LifetimeName>) -> bool {
+pub fn is_user_defined_lifetime(lifetime: Option<&rustc_hir::LifetimeKind>) -> bool {
     match lifetime {
-        Some(rustc_hir::LifetimeName::Param(local_def_id)) => {
+        Some(rustc_hir::LifetimeKind::Param(local_def_id)) => {
             if (format!("{:?}", local_def_id).as_str() == "'_") {
                 return false;
             } else {
                 return true;
             }
         }
-        Some(rustc_hir::LifetimeName::Static) => {
+        Some(rustc_hir::LifetimeKind::Static) => {
             return true;
         }
         _ => {
@@ -462,9 +461,9 @@ pub fn check_if_closure<'tcx>(bounds: &'tcx rustc_hir::GenericBounds<'tcx>) -> b
     false
 }
 
-pub fn get_lifetime_from_type(inp_ty: &Ty) -> (Option<rustc_hir::LifetimeName>, Mutability) {
+pub fn get_lifetime_from_type(inp_ty: &Ty) -> (Option<rustc_hir::LifetimeKind>, Mutability) {
     let mut mutability = Mutability::Not;
-    let mut lifetime: Option<rustc_hir::LifetimeName> = None;
+    let mut lifetime: Option<rustc_hir::LifetimeKind> = None;
 
     let sub_types: Vec<&Ty> = get_nested_types_from_type(&inp_ty);
 
@@ -474,20 +473,20 @@ pub fn get_lifetime_from_type(inp_ty: &Ty) -> (Option<rustc_hir::LifetimeName>, 
             // println!("{:?}, {:?}", rl, mut_ty);
             // }
             if lifetime == None {
-                lifetime = Some(rl.res);
+                lifetime = Some(rl.kind);
             }
             if mut_ty.mutbl == Mutability::Mut {
                 mutability = mut_ty.mutbl;
-                lifetime = Some(rl.res);
+                lifetime = Some(rl.kind);
                 break;
             }
         } else {
             let (_, args) = get_defid_args_from_kind(&ty.kind);
 
             for arg in args.iter() {
-                if let rustc_hir::GenericArg::Lifetime(rustc_hir::Lifetime { res, .. }) = *arg {
+                if let rustc_hir::GenericArg::Lifetime(rustc_hir::Lifetime { kind, .. }) = *arg {
                     if lifetime == None {
-                        lifetime = Some(*res);
+                        lifetime = Some(*kind);
                     }
                     break;
                 }
@@ -508,13 +507,7 @@ pub fn check_if_contains_lifetimes(tcx: &TyCtxt) -> bool {
         };
 
         // First check all functions
-        if let rustc_hir::ItemKind::Fn {
-            sig,
-            generics,
-            body,
-            ..
-        } = &item.kind
-        {
+        if let rustc_hir::ItemKind::Fn { sig, generics, .. } = &item.kind {
             // Check returned value
             if let rustc_hir::FnRetTy::Return(ret_type) = sig.decl.output {
                 let (ret_lifetime, _) = get_lifetime_from_type(&ret_type);
@@ -533,10 +526,10 @@ pub fn check_if_contains_lifetimes(tcx: &TyCtxt) -> bool {
 
             // Check trait bounds
             let bounds_map = get_bounds_from_generics(&generics);
-            for (&def_id, &bounds) in bounds_map.iter() {
+            for (_, &bounds) in bounds_map.iter() {
                 for bound in bounds.iter() {
                     if let rustc_hir::GenericBound::Outlives(lifetime) = *bound {
-                        if is_user_defined_lifetime(Some(&lifetime.res)) {
+                        if is_user_defined_lifetime(Some(&lifetime.kind)) {
                             return true;
                         }
                     }
@@ -549,7 +542,7 @@ pub fn check_if_contains_lifetimes(tcx: &TyCtxt) -> bool {
         if let rustc_hir::ItemKind::Impl(this_impl) = &item.kind {
             for internal_item in this_impl.items {
                 if let rustc_hir::Node::ImplItem(rustc_hir::ImplItem {
-                    kind: rustc_hir::ImplItemKind::Fn(fn_sig, body_id),
+                    kind: rustc_hir::ImplItemKind::Fn(fn_sig, _),
                     generics,
                     ..
                 }) = tcx.hir_node_by_def_id(internal_item.id.owner_id.def_id)
@@ -572,10 +565,10 @@ pub fn check_if_contains_lifetimes(tcx: &TyCtxt) -> bool {
 
                     // Check trait bounds
                     let bounds_map = get_bounds_from_generics(&generics);
-                    for (&def_id, &bounds) in bounds_map.iter() {
+                    for (_, &bounds) in bounds_map.iter() {
                         for bound in bounds.iter() {
                             if let rustc_hir::GenericBound::Outlives(lifetime) = *bound {
-                                if is_user_defined_lifetime(Some(&lifetime.res)) {
+                                if is_user_defined_lifetime(Some(&lifetime.kind)) {
                                     return true;
                                 }
                             }
@@ -587,13 +580,13 @@ pub fn check_if_contains_lifetimes(tcx: &TyCtxt) -> bool {
         }
 
         // Then check all structures
-        if let rustc_hir::ItemKind::Struct(_, _, generics) = &item.kind {
+        if let rustc_hir::ItemKind::Struct(_, generics, _) = &item.kind {
             // Check trait bounds
             let bounds_map = get_bounds_from_generics(&generics);
-            for (&def_id, &bounds) in bounds_map.iter() {
+            for (_, &bounds) in bounds_map.iter() {
                 for bound in bounds.iter() {
                     if let rustc_hir::GenericBound::Outlives(lifetime) = *bound {
-                        if is_user_defined_lifetime(Some(&lifetime.res)) {
+                        if is_user_defined_lifetime(Some(&lifetime.kind)) {
                             return true;
                         }
                     }

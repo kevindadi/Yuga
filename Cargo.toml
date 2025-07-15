@@ -23,7 +23,7 @@ test = false
 doctest = false
 
 [dependencies]
-cargo_metadata = "0.19"
+cargo_metadata = "0.20.0"
 chrono = "0.4"
 dashmap = "6.1"
 fern = "0.7"
@@ -37,12 +37,12 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.56"
 snafu = "*"
 termcolor = "1.1.2"
-toml = "0.8.20"
+toml = "0.9.0"
 wait-timeout = "0.2"
 bitflags = "2.4.1"
-which = "7.0.3"
+which = "8.0.0"
 plist = "~1.7.1"
-comrak = "0.38.0"
+comrak = "0.39.1"
 
 [features]
 backtraces = ["snafu/backtraces", "snafu/backtraces-impl-backtrace-crate"]

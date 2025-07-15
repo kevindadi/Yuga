@@ -1,5 +1,5 @@
 use rustc_hash::FxHashMap;
-use rustc_hir::{def_id::DefId, Lifetime, LifetimeName, Mutability, Ty, TyKind};
+use rustc_hir::{def_id::DefId, Lifetime, LifetimeKind, Mutability, Ty, TyKind};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::Span;
 
@@ -23,13 +23,13 @@ use crate::analysis::lifetime::utils::{
 pub fn get_trait_lifetime_bounds<'tcx>(
     def_id: &DefId,
     trait_bounds: &FxHashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
-) -> Vec<LifetimeName> {
-    let mut lifetimes: Vec<LifetimeName> = Vec::new();
+) -> Vec<LifetimeKind> {
+    let mut lifetimes: Vec<LifetimeKind> = Vec::new();
 
     if trait_bounds.contains_key(&def_id) {
         for bound in *trait_bounds.get(def_id).unwrap() {
-            if let rustc_hir::GenericBound::Outlives(Lifetime { res, .. }) = *bound {
-                lifetimes.push(*res);
+            if let rustc_hir::GenericBound::Outlives(Lifetime { kind, .. }) = *bound {
+                lifetimes.push(*kind);
             }
         }
     }
@@ -38,7 +38,7 @@ pub fn get_trait_lifetime_bounds<'tcx>(
 
 #[derive(Debug, Clone)]
 pub struct MyLifetime {
-    pub names: Vec<LifetimeName>,
+    pub names: Vec<LifetimeKind>,
     pub is_mut: bool,
     pub is_raw: bool,
     pub is_refcell: bool,
@@ -68,25 +68,25 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LifetimeNameWrapper(pub LifetimeName);
+pub struct LifetimeKindWrapper(pub LifetimeKind);
 
-impl Hash for LifetimeNameWrapper {
+impl Hash for LifetimeKindWrapper {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self.0 {
-            LifetimeName::Static => {
+            LifetimeKind::Static => {
                 0.hash(state);
             }
-            LifetimeName::Param(def_id) => {
+            LifetimeKind::Param(def_id) => {
                 1.hash(state);
                 def_id.hash(state);
             }
-            LifetimeName::ImplicitObjectLifetimeDefault => {
+            LifetimeKind::ImplicitObjectLifetimeDefault => {
                 2.hash(state);
             }
-            LifetimeName::Error => {
+            LifetimeKind::Error => {
                 3.hash(state);
             }
-            LifetimeName::Infer => {
+            LifetimeKind::Infer => {
                 4.hash(state);
             }
         }
@@ -118,7 +118,7 @@ pub fn get_sub_types_dbg<'tcx>(
     tcx: &'tcx TyCtxt<'tcx>,
     mut known_defids: Vec<DefId>, // Needed to prevent infinite loop
     mut defid_remap: FxHashMap<DefId, &'tcx Ty<'tcx>>,
-    mut lifetime_remap: FxHashMap<LifetimeNameWrapper, LifetimeNameWrapper>,
+    mut lifetime_remap: FxHashMap<LifetimeKindWrapper, LifetimeKindWrapper>,
     debug: bool,
 ) -> Vec<ShortLivedType> {
     let mut types: Vec<ShortLivedType> = Vec::new();
@@ -151,7 +151,7 @@ pub fn get_sub_types_dbg<'tcx>(
 
         TyKind::Ref(lifetime, rustc_hir::MutTy { ty: sub_ty, mutbl }) => {
             // Straight away do a substitution if available
-            let lifetime_name = lifetime.res;
+            let lifetime_name = lifetime.kind;
             // This will do its own lifetime substitution so we don't need to substitute again!
             let sub_types = get_sub_types_dbg(
                 &sub_ty,
@@ -311,10 +311,10 @@ pub fn get_sub_types_dbg<'tcx>(
                         false
                     }
                 };
-                if !lifetimes.contains(&LifetimeName::Static) {
+                if !lifetimes.contains(&LifetimeKind::Static) {
                     // T could be a borrow - T ~ &S
                     // Create a new lifetime with the def_id of the generic T
-                    let artificial = LifetimeName::Param(rustc_hir::def_id::LocalDefId {
+                    let artificial = LifetimeKind::Param(rustc_hir::def_id::LocalDefId {
                         local_def_index: def_id.index,
                     });
                     let this_lifetime = MyLifetime {
@@ -339,7 +339,7 @@ pub fn get_sub_types_dbg<'tcx>(
             // Okay, so now it's not a generic. Moving on.
             // Get its lifetime and type parameters specified inside <.>
 
-            let mut struct_lifetimes: Vec<LifetimeName> = Vec::new();
+            let mut struct_lifetimes: Vec<LifetimeKind> = Vec::new();
             let mut type_parameters: Vec<&Ty> = Vec::new();
 
             // let temp : Vec<rustc_hir::GenericArg> = Vec::new();
@@ -355,9 +355,10 @@ pub fn get_sub_types_dbg<'tcx>(
                 for arg in *args {
                     actual_args.push(arg);
 
-                    if let rustc_hir::GenericArg::Lifetime(rustc_hir::Lifetime { res, .. }) = *arg {
+                    if let rustc_hir::GenericArg::Lifetime(rustc_hir::Lifetime { kind, .. }) = *arg
+                    {
                         // Apply the remap here immediately
-                        struct_lifetimes.push(*res);
+                        struct_lifetimes.push(*kind);
                     }
                     if let rustc_hir::GenericArg::Type(ty) = arg {
                         type_parameters.push(ty.as_unambig_ty());
@@ -444,7 +445,7 @@ pub fn get_sub_types_dbg<'tcx>(
             // We managed to find the structure definition. Go through sub-fields
 
             if let Some(rustc_hir::Node::Item(rustc_hir::Item {
-                kind: rustc_hir::ItemKind::Struct(ident, variant_data, generics),
+                kind: rustc_hir::ItemKind::Struct(ident, generics, variant_data),
                 span: struct_decl_span,
                 ..
             })) = node
@@ -576,10 +577,10 @@ fn generate_remappings<'tcx>(
     formal_args: &'tcx [rustc_hir::GenericParam<'tcx>],
     actual_args: Vec<&'tcx rustc_hir::GenericArg<'tcx>>,
 ) -> (
-    FxHashMap<LifetimeNameWrapper, LifetimeNameWrapper>,
+    FxHashMap<LifetimeKindWrapper, LifetimeKindWrapper>,
     FxHashMap<DefId, &'tcx Ty<'tcx>>,
 ) {
-    let mut lifetime_remap: FxHashMap<LifetimeNameWrapper, LifetimeNameWrapper> =
+    let mut lifetime_remap: FxHashMap<LifetimeKindWrapper, LifetimeKindWrapper> =
         FxHashMap::default();
     let mut defid_remap: FxHashMap<DefId, &'tcx Ty<'tcx>> = FxHashMap::default();
 
@@ -604,10 +605,10 @@ fn generate_remappings<'tcx>(
         if let rustc_hir::GenericParamKind::Lifetime { .. } = f_arg.kind {
             match a_arg {
                 rustc_hir::GenericArg::Lifetime(a_lifetime) => {
-                    let f_lifetime = LifetimeName::Param(f_arg.def_id);
+                    let f_lifetime = LifetimeKind::Param(f_arg.def_id);
                     lifetime_remap.insert(
-                        LifetimeNameWrapper(f_lifetime),
-                        LifetimeNameWrapper(a_lifetime.res),
+                        LifetimeKindWrapper(f_lifetime),
+                        LifetimeKindWrapper(a_lifetime.kind),
                     );
                 }
                 _ => {
@@ -623,9 +624,9 @@ pub fn get_implicit_lifetime_bounds<'tcx>(
     ty: &'tcx Ty<'tcx>,
     trait_bounds: &FxHashMap<DefId, rustc_hir::GenericBounds<'tcx>>,
     tcx: &'tcx TyCtxt<'tcx>,
-) -> Vec<(LifetimeName, LifetimeName)> {
+) -> Vec<(LifetimeKind, LifetimeKind)> {
     let sub_types = get_sub_types(ty, trait_bounds, tcx);
-    let mut all_bounds: Vec<(LifetimeName, LifetimeName)> = Vec::new();
+    let mut all_bounds: Vec<(LifetimeKind, LifetimeKind)> = Vec::new();
 
     for sub_type in sub_types.iter() {
         for i in 0..sub_type.lifetimes.len() {
@@ -644,7 +645,7 @@ pub fn get_implicit_lifetime_bounds<'tcx>(
         }
     }
 
-    let mut unique_bounds: Vec<(LifetimeName, LifetimeName)> = Vec::new();
+    let mut unique_bounds: Vec<(LifetimeKind, LifetimeKind)> = Vec::new();
 
     for (x, y) in all_bounds.iter() {
         if !unique_bounds
