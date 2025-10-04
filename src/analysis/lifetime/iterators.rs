@@ -116,13 +116,11 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                 let impl_item = &this_impl.items[self.impl_ind];
                 self.impl_ind += 1;
 
-                if let rustc_hir::Node::ImplItem(rustc_hir::ImplItem {
-                    kind: rustc_hir::ImplItemKind::Fn(fn_sig, body_id),
-                    generics,
-                    vis_span,
-                    ..
-                }) = self.tcx.hir_node_by_def_id(impl_item.id.owner_id.def_id)
+                if let rustc_hir::Node::ImplItem(impl_item_node) = self.tcx.hir_node_by_def_id(impl_item.owner_id.def_id)
                 {
+                    if let rustc_hir::ImplItemKind::Fn(fn_sig, body_id) = &impl_item_node.kind {
+                        let generics = &impl_item_node.generics;
+                        let vis_span = &impl_item_node.vis_span;
                     let source_map = self.tcx.sess.source_map();
                     let vis_string = source_map
                         .span_to_snippet(*vis_span)
@@ -153,7 +151,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
 
                     if let Some(trait_ref) = &this_impl.of_trait {
                         impl_trait = source_map
-                            .span_to_snippet(trait_ref.path.span)
+                            .span_to_snippet(trait_ref.trait_ref.path.span)
                             .unwrap_or_else(|e| format!("unable to get source: {:?}", e));
                     }
 
@@ -171,7 +169,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                     if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) =
                         this_impl.self_ty.kind
                     {
-                        func_name = format!("{:?}::{}", path.res, impl_item.ident.name.as_str());
+                        func_name = format!("{:?}::{}", path.res, impl_item_node.ident.name.as_str());
                     }
 
                     let mut generic_bounds = get_bounds_from_generics(&generics);
@@ -194,6 +192,7 @@ impl<'tcx, 'a> Iterator for FnIter<'tcx, 'a> {
                     };
 
                     return Some(mirfunc);
+                    }
                 }
                 return self.next();
             }

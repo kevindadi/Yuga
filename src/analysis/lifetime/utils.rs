@@ -46,16 +46,15 @@ pub fn get_drop_impl(struct_def_id: DefId, tcx: &TyCtxt) -> Option<Span> {
 
             if impl_def_id == Some(struct_def_id) {
                 for impl_item in this_impl.items {
-                    if let rustc_hir::Node::ImplItem(rustc_hir::ImplItem {
-                        kind: rustc_hir::ImplItemKind::Fn(_, _),
-                        span,
-                        ..
-                    }) = tcx.hir_node_by_def_id(impl_item.id.owner_id.def_id)
+                    if let rustc_hir::Node::ImplItem(impl_item_node) = tcx.hir_node_by_def_id(impl_item.owner_id.def_id)
                     {
-                        if impl_item.ident.name.as_str() == "drop" {
-                            return Some(*span);
+                        if let rustc_hir::ImplItemKind::Fn(_, _) = &impl_item_node.kind {
+                            if impl_item_node.ident.name.as_str() == "drop" {
+                                return Some(impl_item_node.span);
+                            }
                         }
                     }
+                    
                 }
             }
         }
@@ -545,7 +544,7 @@ pub fn check_if_contains_lifetimes(tcx: &TyCtxt) -> bool {
                     kind: rustc_hir::ImplItemKind::Fn(fn_sig, _),
                     generics,
                     ..
-                }) = tcx.hir_node_by_def_id(internal_item.id.owner_id.def_id)
+                }) = tcx.hir_node_by_def_id(internal_item.owner_id.def_id)
                 {
                     // Check returned value
                     if let rustc_hir::FnRetTy::Return(ret_type) = fn_sig.decl.output {
